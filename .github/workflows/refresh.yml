@@ -10,9 +10,15 @@ name: Refresh odds snapshot
 
 on:
   schedule:
-    # Every 10 minutes. GitHub cron is best-effort and often lands late under
-    # load; consumers must treat generatedAt as the truth, not the schedule.
-    - cron: '*/10 * * * *'
+    # Deliberately NOT '*/10'. That fires on :00, :10, :20 … and GitHub
+    # documents the start of each hour as its heaviest load window, where
+    # scheduled runs get delayed or dropped. Measured on this repo: '*/10'
+    # produced ONE run in 51 minutes.
+    #
+    # Offsetting to :07, :17 … asks for the same cadence away from the
+    # congested boundaries. GitHub cron is best-effort regardless, so consumers
+    # must treat generatedAt as the truth and never the schedule.
+    - cron: '7,17,27,37,47,57 * * * *'
   workflow_dispatch:
 
 # Never let a slow run overlap the next tick. Snapshots are whole-file
