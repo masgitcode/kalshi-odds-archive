@@ -31,10 +31,18 @@ reader can see a snapshot up to five minutes older than the one just published.
 
 ## Freshness
 
-Refresh runs every 10 minutes. GitHub's scheduler is best-effort and frequently
-runs late under load, so **trust `generatedAt`, never the schedule.** Combined
-with raw's five-minute cache, assume a worst case around 25 minutes and design
-the consumer's staleness threshold above that.
+**Assume roughly hourly. Do not design for the requested cadence.**
+
+The workflow asks for a run every 10 minutes and also once an hour. On free
+public runners GitHub honours the hourly line and largely ignores the rest —
+measured here, `*/10` produced one run in 51 minutes and an offset sub-hourly
+cron produced none in 41. That is GitHub's scheduler, not a fault in this repo,
+and no cron expression fixes it.
+
+So: **trust `generatedAt`, never the schedule.** Add raw's five-minute cache on
+top, and a consumer's staleness threshold should sit comfortably above an hour.
+A threshold tuned to the requested 10-minute cadence will reject most real
+snapshots and silently render this feed useless.
 
 The `data` branch is force-pushed, so it is always exactly one commit deep.
 There is no historical archive of snapshots — each run replaces the last. The

@@ -10,15 +10,22 @@ name: Refresh odds snapshot
 
 on:
   schedule:
-    # Deliberately NOT '*/10'. That fires on :00, :10, :20 … and GitHub
-    # documents the start of each hour as its heaviest load window, where
-    # scheduled runs get delayed or dropped. Measured on this repo: '*/10'
-    # produced ONE run in 51 minutes.
+    # Two entries on purpose: one asking for a fast cadence, one guaranteeing a
+    # floor.
     #
-    # Offsetting to :07, :17 … asks for the same cadence away from the
-    # congested boundaries. GitHub cron is best-effort regardless, so consumers
-    # must treat generatedAt as the truth and never the schedule.
+    # Measured on this repo, on free public runners: '*/10' produced one run in
+    # 51 minutes, and offsetting to :07/:17/… produced none in 41. GitHub's
+    # scheduler simply does not honour sub-hourly cron here, and no cron
+    # expression makes it. Hourly schedules are honoured far more reliably.
+    #
+    # So: ask for frequent and take it when granted, but depend only on the
+    # hourly line. That is enough, because this feed exists to keep odds alive
+    # while the consumer's local refresher is off — and the consumer hides
+    # prices only after 6 hours.
+    #
+    # Consumers must treat generatedAt as the truth and never the schedule.
     - cron: '7,17,27,37,47,57 * * * *'
+    - cron: '23 * * * *'
   workflow_dispatch:
 
 # Never let a slow run overlap the next tick. Snapshots are whole-file
