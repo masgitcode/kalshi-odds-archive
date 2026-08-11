@@ -1,0 +1,34 @@
+name: Keepalive
+
+# GitHub disables scheduled workflows after 60 days of repository inactivity.
+# The refresh job force-pushes to the `data` branch rather than committing to
+# the default branch, and whether that counts as "activity" is not documented
+# — so this commits a dated line to the default branch monthly, which is the
+# shape of activity known to keep a schedule alive.
+#
+# Cheap insurance: twelve commits a year to stop the whole feed going quiet.
+
+on:
+  schedule:
+    - cron: '0 12 1 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Touch the heartbeat
+        run: |
+          set -euo pipefail
+          date -u +%FT%TZ >> HEARTBEAT
+          # Keep the file from growing forever.
+          tail -24 HEARTBEAT > HEARTBEAT.tmp && mv HEARTBEAT.tmp HEARTBEAT
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -am "chore: keepalive $(date -u +%F)"
+          git push

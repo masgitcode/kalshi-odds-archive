@@ -1,0 +1,7 @@
+node_modules/
+# Local fetch output. The published copy lives on the `data` branch, written by
+# CI — snapshots must never be committed to the default branch.
+out/
+data/
+publish/
+.DS_Store
