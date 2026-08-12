@@ -1,0 +1,103 @@
+name: Scoreboard ingest health check
+
+# Watches the putascoreboard worker's snapshot freshness and fails loudly when
+# ESPN ingest stops. On 2026-08-04 ESPN began 403ing the worker and every
+# snapshot froze; nothing surfaced it and the outage ran four days until
+# someone noticed a missing score by eye. A failed scheduled run emails the
+# repo owner, which turns that four days into hours.
+#
+# WHY THIS LIVES HERE, in a repo it does not otherwise relate to: it used to
+# live in masgitcode/scoreboard, which is private. That account's Actions
+# spending limit is exhausted, so a private-repo runner never starts — every
+# fire died in ~4s having checked nothing, and mailed a failure anyway. The
+# alarm was therefore dead while still appearing to be armed, which is worse
+# than no alarm. This repo is public, so its runners are free and unmetered,
+# and it already runs a reliable schedule for the odds feed.
+#
+# It needs nothing from this repo and nothing from that one: it curls two
+# public worker endpoints and reads JSON. No secrets, no checkout, no
+# dependency on either repo's code. That self-containment is what makes
+# hosting it here sound rather than a hack.
+#
+# Every 3 hours. Sub-hourly cron is not honoured on free public runners (see
+# refresh.yml), but 3h is far above that floor and detection does not need to
+# be tighter — the threshold below is 8h.
+
+on:
+  schedule:
+    - cron: '17 */3 * * *'
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check snapshot freshness
+        env:
+          WORKER: https://sports-data-worker.hymnal-scram-9z.workers.dev
+        run: |
+          set -uo pipefail
+
+          curl -sS --max-time 30 --retry 2 --retry-delay 5 \
+            "$WORKER/api/v1/health" -o football.json || {
+              echo "::error::Worker /api/v1/health is unreachable."
+              exit 1
+            }
+          curl -sS --max-time 30 --retry 2 --retry-delay 5 \
+            "$WORKER/world-cup/v1/health" -o worldcup.json || {
+              echo "::error::Worker /world-cup/v1/health is unreachable."
+              exit 1
+            }
+
+          python3 - <<'PY'
+          import json, sys
+          from datetime import datetime, timezone
+
+          # Slowest legitimate refresh is 6h (resolvePollIntervalSeconds, past
+          # weeks), so 8h is "genuinely broken" rather than "merely idle".
+          MAX_AGE_SECONDS = 8 * 3600
+
+          def parse(ts):
+              return datetime.fromisoformat(ts.replace('Z', '+00:00'))
+
+          now = datetime.now(timezone.utc)
+          problems = []
+
+          football = json.load(open('football.json'))
+          for row in football.get('snapshots', []):
+              label = f"{row['league']} week_{row['weekOffset']}"
+              ts = row.get('sourceLastSuccessAt')
+              if not ts:
+                  problems.append(f"{label}: no sourceLastSuccessAt")
+                  continue
+              age = (now - parse(ts)).total_seconds()
+              flag = 'STALE' if age > MAX_AGE_SECONDS else 'ok'
+              print(f"{label:16} {flag:5} age={age/3600:6.1f}h  games={row.get('gameCount')}")
+              if age > MAX_AGE_SECONDS:
+                  problems.append(f"{label}: last success {age/3600:.1f}h ago ({ts})")
+
+          # The World Cup snapshot is the canary that lied last time: its `stale`
+          # flag is never persisted on failure, so trust generatedAt, not `stale`.
+          wc = json.load(open('worldcup.json'))
+          ts = wc.get('generatedAt')
+          if ts:
+              age = (now - parse(ts)).total_seconds()
+              print(f"{'world cup':16} {'STALE' if age > MAX_AGE_SECONDS else 'ok':5} age={age/3600:6.1f}h")
+              if age > MAX_AGE_SECONDS:
+                  problems.append(f"world cup: generated {age/3600:.1f}h ago ({ts})")
+          else:
+              problems.append("world cup: no generatedAt")
+
+          if problems:
+              print()
+              for p in problems:
+                  print(f"::error::{p}")
+              print()
+              print("ESPN ingest looks broken. Most likely cause: ESPN's edge is")
+              print("rejecting the worker again (it 403s unrecognized User-Agents).")
+              print("Check `npx wrangler tail sports-data-worker` for the status code")
+              print("in scoreboard_refresh_failed, then see workers/sports-data/src/espnFetch.ts.")
+              sys.exit(1)
+
+          print("\nAll snapshots fresh.")
+          PY
