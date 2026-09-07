@@ -44,8 +44,16 @@ jobs:
     strategy:
       # One league failing must not suppress the other.
       fail-fast: false
+      # Serialised, and it has to stay that way. The publish step below snapshots
+      # the data branch, drops its own league's file in, and force-pushes. Run in
+      # parallel, each job snapshots the branch as it was at ITS start, so the
+      # slowest job's push discards everything the faster ones committed while it
+      # was working — and the jobs are wildly uneven (ncaaf ~290s, nfl ~40s), so
+      # nfl would sit permanently one cycle stale. One at a time, each fetch sees
+      # the previous push.
+      max-parallel: 1
       matrix:
-        league: [nfl, epl]
+        league: [nfl, ncaaf, epl]
     steps:
       - uses: actions/checkout@v4
 
