@@ -29,6 +29,14 @@ const SERIES_TICKER = { nfl: 'KXNFLGAME', ncaaf: 'KXNCAAFGAME', epl: 'KXEPLGAME'
  * guessing wrong silently charts the opponent under the home label.
  */
 const HOME_FIRST = { epl: true };
+
+/**
+ * Spread ladders. Separate series from the moneyline, same ticker grammar, and
+ * football only — soccer is scored too low for a points handicap to mean much
+ * and Kalshi lists none. Published raw like everything else; the consumer turns
+ * the ladder into a number.
+ */
+const SPREAD_SERIES = { nfl: 'KXNFLSPREAD', ncaaf: 'KXNCAAFSPREAD' };
 const PAGE_LIMIT = 200;
 const MAX_PAGES = 6;
 
@@ -242,6 +250,19 @@ async function main() {
     throw new Error('Every candlestick request failed');
   }
 
+  // Spread ladders are prices only — no candlesticks fetched for them, so this
+  // adds one paginated call per run rather than hundreds.
+  let spreadEvents = [];
+  const spreadSeries = SPREAD_SERIES[LEAGUE];
+  if (spreadSeries) {
+    try {
+      spreadEvents = await fetchSeriesEvents(spreadSeries, 'open');
+      console.log(`spread events: ${spreadEvents.length}`);
+    } catch (error) {
+      console.warn(`spread fetch failed, continuing without it: ${error.message}`);
+    }
+  }
+
   const snapshot = {
     version: 'v1',
     league: LEAGUE,
@@ -253,6 +274,7 @@ async function main() {
     events,
     settledEvents,
     history,
+    spreadEvents,
   };
 
   mkdirSync(OUT_DIR, { recursive: true });
