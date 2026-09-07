@@ -17,7 +17,18 @@ const KALSHI_API_BASE = 'https://api.elections.kalshi.com/trade-api/v2';
 const USER_AGENT = 'kalshi-odds-archive/1.0 (+https://github.com/masgitcode/kalshi-odds-archive)';
 const REQUEST_TIMEOUT_MS = 15000;
 
-const SERIES_TICKER = { nfl: 'KXNFLGAME', ncaaf: 'KXNCAAFGAME' };
+const SERIES_TICKER = { nfl: 'KXNFLGAME', ncaaf: 'KXNCAAFGAME', epl: 'KXEPLGAME' };
+
+/**
+ * Which side `sub_title` names first. Kalshi writes American football as
+ * "AWAY vs HOME" and English soccer as "HOME vs AWAY" — verified 2026-09-07
+ * against ESPN, 89/89 NCAAF games away-first and 19/19 EPL games home-first.
+ *
+ * Orientation has to live here even though the game join deliberately does not:
+ * this file picks ONE side's candlesticks and stamps a `side` label on them, so
+ * guessing wrong silently charts the opponent under the home label.
+ */
+const HOME_FIRST = { epl: true };
 const PAGE_LIMIT = 200;
 const MAX_PAGES = 6;
 
@@ -134,7 +145,7 @@ function seriesOf(eventTicker) {
 function homeMarketTicker(event) {
   const teams = /^([A-Z0-9]+)\s+vs\.?\s+([A-Z0-9]+)\b/.exec(event?.sub_title ?? '');
   if (!teams) return null;
-  const home = teams[2];
+  const home = HOME_FIRST[LEAGUE] ? teams[1] : teams[2];
   const market = (event?.markets ?? []).find(
     (m) => typeof m?.ticker === 'string' && m.ticker.endsWith(`-${home}`),
   );
