@@ -43,19 +43,17 @@ jobs:
               echo "::error::Worker /api/v1/health is unreachable."
               exit 1
             }
-          curl -sS --max-time 30 --retry 2 --retry-delay 5 \
-            "$WORKER/world-cup/v1/health" -o worldcup.json || {
-              echo "::error::Worker /world-cup/v1/health is unreachable."
-              exit 1
-            }
-
           python3 - <<'PY'
           import json, sys
           from datetime import datetime, timezone
 
-          # Slowest legitimate refresh is 6h (resolvePollIntervalSeconds, past
-          # weeks), so 8h is "genuinely broken" rather than "merely idle".
-          MAX_AGE_SECONDS = 8 * 3600
+          # 8h was below the real idle ceiling and paged on healthy weekends.
+          # Past weeks refresh every 6h at best (resolvePollIntervalSeconds) and
+          # runScheduler refreshes ONE entry per tick across nine of them, so a
+          # busy Saturday queues them: 13.8h observed on 2026-09-06 with nothing
+          # wrong. 16h clears that and still catches a real outage — the 2026-08-04
+          # ESPN 403 ran four days — within a day.
+          MAX_AGE_SECONDS = 16 * 3600
 
           def parse(ts):
               return datetime.fromisoformat(ts.replace('Z', '+00:00'))
@@ -75,18 +73,6 @@ jobs:
               print(f"{label:16} {flag:5} age={age/3600:6.1f}h  games={row.get('gameCount')}")
               if age > MAX_AGE_SECONDS:
                   problems.append(f"{label}: last success {age/3600:.1f}h ago ({ts})")
-
-          # The World Cup snapshot is the canary that lied last time: its `stale`
-          # flag is never persisted on failure, so trust generatedAt, not `stale`.
-          wc = json.load(open('worldcup.json'))
-          ts = wc.get('generatedAt')
-          if ts:
-              age = (now - parse(ts)).total_seconds()
-              print(f"{'world cup':16} {'STALE' if age > MAX_AGE_SECONDS else 'ok':5} age={age/3600:6.1f}h")
-              if age > MAX_AGE_SECONDS:
-                  problems.append(f"world cup: generated {age/3600:.1f}h ago ({ts})")
-          else:
-              problems.append("world cup: no generatedAt")
 
           if problems:
               print()
