@@ -166,11 +166,9 @@ async function main() {
 
   const events = await fetchSeriesEvents(series, 'open');
   console.log(`open events: ${events.length}`);
-  if (events.length === 0) {
-    // Refusing beats publishing nothing: a consumer cannot tell an empty slate
-    // from "no market exists", and the previous snapshot stays valid.
-    throw new Error('Kalshi returned no open events; refusing to publish an empty snapshot');
-  }
+  // An empty result is a normal state between slates (as with EPL after the
+  // weekend matches settle). Publish it so consumers learn that there are no
+  // current markets instead of retaining a stale set of prices indefinitely.
 
   const endTs = Math.floor(Date.now() / 1000);
   const startTs = endTs - LOOKBACK_DAYS * 24 * 60 * 60;
