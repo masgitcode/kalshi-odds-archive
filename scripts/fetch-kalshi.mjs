@@ -12,6 +12,7 @@
 // drifting between two repositories.
 
 import { mkdirSync, writeFileSync } from 'node:fs';
+import { writeWorkerFeeds } from './write-worker-feeds.mjs';
 
 const KALSHI_API_BASE = 'https://api.elections.kalshi.com/trade-api/v2';
 const USER_AGENT = 'kalshi-odds-archive/1.0 (+https://github.com/masgitcode/kalshi-odds-archive)';
@@ -277,6 +278,7 @@ async function main() {
 
   mkdirSync(OUT_DIR, { recursive: true });
   writeFileSync(`${OUT_DIR}/${LEAGUE}.json`, JSON.stringify(snapshot));
+  writeWorkerFeeds(snapshot, OUT_DIR);
   writeFileSync(
     `${OUT_DIR}/${LEAGUE}.meta.json`,
     JSON.stringify(

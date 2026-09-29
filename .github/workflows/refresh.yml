@@ -82,6 +82,8 @@ jobs:
           git fetch origin data --depth=1 2>/dev/null || true
           mkdir -p publish
           git --work-tree=publish checkout origin/data -- . 2>/dev/null || true
+          # Replace only this league's generated chart files; other leagues survive.
+          find publish -maxdepth 1 -name "${LEAGUE}.history.*.json" -delete
           cp out/*.json publish/
 
           cd publish
