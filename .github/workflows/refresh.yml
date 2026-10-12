@@ -1,0 +1,101 @@
+name: Refresh odds snapshot
+
+# Public repository, so GitHub-hosted standard runners are free and this does
+# not draw on any included-minutes quota.
+#
+# Kalshi rate-limits by IP and rejects Cloudflare's shared egress addresses with
+# 429, which is why the fetch happens on a runner rather than in the consuming
+# Worker. A runner also sends no Origin header; Kalshi returns 403 to anything
+# that does, so a browser cannot do this either.
+
+on:
+  schedule:
+    # Two entries on purpose: one asking for a fast cadence, one guaranteeing a
+    # floor.
+    #
+    # Measured on this repo, on free public runners: '*/10' produced one run in
+    # 51 minutes, and offsetting to :07/:17/… produced none in 41. GitHub's
+    # scheduler simply does not honour sub-hourly cron here, and no cron
+    # expression makes it. Hourly schedules are honoured far more reliably.
+    #
+    # So: ask for frequent and take it when granted, but depend only on the
+    # hourly line. That is enough, because this feed exists to keep odds alive
+    # while the consumer's local refresher is off — and the consumer hides
+    # prices only after 6 hours.
+    #
+    # Consumers must treat generatedAt as the truth and never the schedule.
+    - cron: '7,17,27,37,47,57 * * * *'
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+# Never let a slow run overlap the next tick. Snapshots are whole-file
+# replacements, so two in flight would race on the same branch.
+concurrency:
+  group: refresh
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      # One league failing must not suppress the other.
+      fail-fast: false
+      # Serialised, and it has to stay that way. The publish step below snapshots
+      # the data branch, drops its own league's file in, and force-pushes. Run in
+      # parallel, each job snapshots the branch as it was at ITS start, so the
+      # slowest job's push discards everything the faster ones committed while it
+      # was working — and the jobs are wildly uneven (ncaaf ~290s, nfl ~40s), so
+      # nfl would sit permanently one cycle stale. One at a time, each fetch sees
+      # the previous push.
+      max-parallel: 1
+      matrix:
+        league: [nfl, ncaaf, epl]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Fetch Kalshi snapshot
+        env:
+          LEAGUE: ${{ matrix.league }}
+          OUT_DIR: out
+        run: node scripts/fetch-kalshi.mjs
+
+      - name: Publish to the data branch
+        env:
+          LEAGUE: ${{ matrix.league }}
+        run: |
+          set -euo pipefail
+          # The data branch is rebuilt from scratch and force-pushed every run.
+          # At a 10-minute cadence an append-only history would be ~4,300
+          # commits a month of poorly-delta-ing JSON; this keeps the repository
+          # one snapshot deep instead of growing without bound.
+          #
+          # Fetch the existing branch first so other leagues' files survive a
+          # single-league run.
+          git fetch origin data --depth=1 2>/dev/null || true
+          mkdir -p publish
+          git --work-tree=publish checkout origin/data -- . 2>/dev/null || true
+          # Replace only this league's generated chart files; other leagues survive.
+          find publish -maxdepth 1 -name "${LEAGUE}.history.*.json" -delete
+          cp out/*.json publish/
+
+          cd publish
+          rm -rf .git
+          git init -q
+          git checkout -q -b data
+          git add -A
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -q -m "odds snapshot ${{ matrix.league }} $(date -u +%FT%TZ)"
+          git push -q -f \
+            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" data
+
+      - name: Summary
+        run: cat out/${{ matrix.league }}.meta.json >> $GITHUB_STEP_SUMMARY
