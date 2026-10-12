@@ -19,13 +19,13 @@ name: Scoreboard ingest health check
 # dependency on either repo's code. That self-containment is what makes
 # hosting it here sound rather than a hack.
 #
-# Every 3 hours. Sub-hourly cron is not honoured on free public runners (see
-# refresh.yml), but 3h is far above that floor and detection does not need to
-# be tighter — the threshold below is 8h.
+# Ask for hourly checks; GitHub may delay or skip scheduled runs (as observed
+# in October 2026). Freshness comes from source timestamps, not cron timing.
+# The current/next game weeks need a tighter threshold than older weeks.
 
 on:
   schedule:
-    - cron: '17 */3 * * *'
+    - cron: '17 * * * *'
   workflow_dispatch:
 
 jobs:
@@ -54,6 +54,10 @@ jobs:
           # wrong. 16h clears that and still catches a real outage — the 2026-08-04
           # ESPN 403 ran four days — within a day.
           MAX_AGE_SECONDS = 16 * 3600
+          # In 15 successful checks (Oct 4-9), current/next-week snapshots
+          # never exceeded 1.1h while past-week snapshots reached 6.9h.
+          # Flag active-week outages sooner without false-flagging backfills.
+          ACTIVE_MAX_AGE_SECONDS = 4 * 3600
 
           def parse(ts):
               return datetime.fromisoformat(ts.replace('Z', '+00:00'))
@@ -62,16 +66,22 @@ jobs:
           problems = []
 
           football = json.load(open('football.json'))
-          for row in football.get('snapshots', []):
+          snapshots = football.get('snapshots')
+          if not isinstance(snapshots, list) or not snapshots:
+              problems.append('football: missing or empty snapshots array')
+              snapshots = []
+          for row in snapshots:
               label = f"{row['league']} week_{row['weekOffset']}"
               ts = row.get('sourceLastSuccessAt')
               if not ts:
                   problems.append(f"{label}: no sourceLastSuccessAt")
                   continue
               age = (now - parse(ts)).total_seconds()
-              flag = 'STALE' if age > MAX_AGE_SECONDS else 'ok'
-              print(f"{label:16} {flag:5} age={age/3600:6.1f}h  games={row.get('gameCount')}")
-              if age > MAX_AGE_SECONDS:
+              max_age = (ACTIVE_MAX_AGE_SECONDS if row.get('weekOffset') in (0, 1)
+                         else MAX_AGE_SECONDS)
+              flag = 'STALE' if age > max_age else 'ok'
+              print(f"{label:16} {flag:5} age={age/3600:6.1f}h  limit={max_age/3600:.0f}h  games={row.get('gameCount')}")
+              if age > max_age:
                   problems.append(f"{label}: last success {age/3600:.1f}h ago ({ts})")
 
           if problems:
