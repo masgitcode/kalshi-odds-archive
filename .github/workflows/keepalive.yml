@@ -33,6 +33,7 @@ jobs:
           date -u +%FT%TZ >> HEARTBEAT
           # Keep the file from growing forever.
           tail -24 HEARTBEAT > HEARTBEAT.tmp && mv HEARTBEAT.tmp HEARTBEAT
+          git add HEARTBEAT
           git -c user.name='github-actions[bot]' \
               -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
               commit -am "chore: keepalive $(date -u +%F)"
