@@ -1,6 +1,6 @@
 import { writeFileSync } from 'node:fs';
 
-// Keep Kalshi values unchanged, but omit fields the scoreboard never reads.
+// Keep Kalshi values unchanged, including the official contract lifecycle.
 // In particular, chart histories must not be parsed by every cron invocation.
 function compactEvent(event) {
   return {
@@ -12,6 +12,10 @@ function compactEvent(event) {
       yes_bid_dollars: market.yes_bid_dollars,
       yes_ask_dollars: market.yes_ask_dollars,
       last_price_dollars: market.last_price_dollars,
+      status: market.status,
+      result: market.result,
+      close_time: market.close_time,
+      settlement_ts: market.settlement_ts,
     })),
   };
 }
