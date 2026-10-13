@@ -21,14 +21,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.PRIVACY_PUBLISH_KEY }}
 
       - name: Touch the heartbeat
+        env:
+          PRIVACY_BLOCKED_IDENTIFIERS: ${{ secrets.PRIVACY_BLOCKED_IDENTIFIERS }}
         run: |
           set -euo pipefail
+          previous_head="$(git rev-parse HEAD)"
           date -u +%FT%TZ >> HEARTBEAT
           # Keep the file from growing forever.
           tail -24 HEARTBEAT > HEARTBEAT.tmp && mv HEARTBEAT.tmp HEARTBEAT
           git -c user.name='github-actions[bot]' \
               -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
               commit -am "chore: keepalive $(date -u +%F)"
+          python3 .github/privacy_guard.py "$previous_head..HEAD" --ref refs/heads/main
           git push

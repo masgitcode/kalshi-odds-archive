@@ -103,3 +103,11 @@ LEAGUE=nfl OUT_DIR=out node scripts/fetch-kalshi.mjs
 ```
 
 No dependencies, no credentials, Node 22+.
+
+## Publishing protection
+
+Branch and tag writes are restricted to dedicated publisher keys. The feed
+jobs and configured local pushes check outgoing content, filenames, and commit
+identities before publication. Identities must use GitHub no-reply email;
+private identifier checks are configured outside the public source.
+Ordinary account-token or browser writes are blocked by repository rulesets.

@@ -56,6 +56,8 @@ jobs:
         league: [nfl, ncaaf, epl]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ssh-key: ${{ secrets.PRIVACY_PUBLISH_KEY }}
 
       - uses: actions/setup-node@v4
         with:
@@ -70,6 +72,7 @@ jobs:
       - name: Publish to the data branch
         env:
           LEAGUE: ${{ matrix.league }}
+          PRIVACY_BLOCKED_IDENTIFIERS: ${{ secrets.PRIVACY_BLOCKED_IDENTIFIERS }}
         run: |
           set -euo pipefail
           # The data branch is rebuilt from scratch and force-pushed every run.
@@ -85,6 +88,7 @@ jobs:
           # Replace only this league's generated chart files; other leagues survive.
           find publish -maxdepth 1 -name "${LEAGUE}.history.*.json" -delete
           cp out/*.json publish/
+          publish_ssh_command="$(git config --get core.sshCommand)"
 
           cd publish
           rm -rf .git
@@ -94,8 +98,9 @@ jobs:
           git -c user.name='github-actions[bot]' \
               -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
               commit -q -m "odds snapshot ${{ matrix.league }} $(date -u +%FT%TZ)"
-          git push -q -f \
-            "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" data
+          python3 "$GITHUB_WORKSPACE/.github/privacy_guard.py" HEAD --ref refs/heads/data
+          git -c core.sshCommand="$publish_ssh_command" push -q -f \
+            "git@github.com:${{ github.repository }}.git" data
 
       - name: Summary
         run: cat out/${{ matrix.league }}.meta.json >> $GITHUB_STEP_SUMMARY
