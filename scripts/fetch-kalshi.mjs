@@ -49,9 +49,9 @@ const PERIOD_INTERVAL_MINUTES = 60;
  * be a single point. A second minute-resolution series covers 24 hours. 1440
  * candles is well inside Kalshi's 5000-per-request cap.
  *
- * The fine window is anchored to the market's OWN last activity, not wall-clock
- * now: a settled game's last 24 hours of wall-clock time contain nothing, so
- * anchoring to now leaves finished games with no minute data at all.
+ * Hourly candles cover completed hours only. Extend the minute window one hour
+ * past the final hourly candle, capped at now, so live charts reach the present.
+ * Retaining that anchor also preserves minute history for settled games.
  */
 const FINE_INTERVAL_MINUTES = 1;
 const FINE_WINDOW_HOURS = 24;
@@ -218,10 +218,13 @@ async function main() {
 
       let finePoints = [];
       try {
-        const lastActivityTs = points[points.length - 1].t;
+        const fineEndTs = Math.min(
+          endTs,
+          points[points.length - 1].t + PERIOD_INTERVAL_MINUTES * 60,
+        );
         const fineParams = new URLSearchParams({
-          start_ts: String(lastActivityTs - FINE_WINDOW_HOURS * 60 * 60),
-          end_ts: String(lastActivityTs),
+          start_ts: String(fineEndTs - FINE_WINDOW_HOURS * 60 * 60),
+          end_ts: String(fineEndTs),
           period_interval: String(FINE_INTERVAL_MINUTES),
         });
         const finePayload = await kalshiFetchJson(
